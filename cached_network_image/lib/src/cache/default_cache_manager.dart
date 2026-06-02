@@ -4,6 +4,7 @@ import 'dart:io' as io;
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:cached_network_image_ce/src/cache/cache_entry_metadata_adapter.dart';
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart';
 import 'package:crypto/crypto.dart';
 import 'package:file/file.dart';
@@ -25,7 +26,7 @@ const _kDefaultMaxAge = Duration(days: 30);
 const _kDefaultMaxCacheObjects = 200;
 const _kDefaultStalePeriod = Duration(days: 7);
 
-const _supportedFileNames = ['jpg', 'jpeg', 'png', 'tga', 'cur', 'ico'];
+const _supportedFileNames = ['jpg', 'jpeg', 'png', 'tga', 'cur', 'ico', 'webp'];
 
 /// Sanitizes a key so it doesn't exceed Hive's 255-character limit for string keys.
 String _sanitizeBoxKey(String key) {
@@ -52,15 +53,36 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   ///   Defaults to [getTemporaryDirectory]. Pass [getApplicationSupportDirectory]
   ///   if you need a more persistent location (but note that files may be
   ///   backed up on iOS/Android).
-  DefaultCacheManager({
-    this.stalePeriod = _kDefaultStalePeriod,
-    this.maxNrOfCacheObjects = _kDefaultMaxCacheObjects,
+  DefaultCacheManager._(
+    this.stalePeriod,
+    this.maxNrOfCacheObjects,
     this.connectionParameters,
-    http.Client Function()? httpClientFactory,
-    CacheDirectoryProvider? cacheDirectoryProvider,
-  })  : _httpClientFactory = httpClientFactory ?? http.Client.new,
-        _cacheDirectoryProvider =
-            cacheDirectoryProvider ?? getTemporaryDirectory;
+    this._httpClientFactory,
+    this._cacheDirectoryProvider,
+  );
+
+  static DefaultCacheManager? instance;
+
+  @Deprecated('use [DefaultCacheManager.instance!] instead')
+  factory DefaultCacheManager() => instance!;
+
+  static Future<DefaultCacheManager> init({
+    Duration stalePeriod = _kDefaultStalePeriod,
+    int maxNrOfCacheObjects = _kDefaultMaxCacheObjects,
+    ConnectionParameters? connectionParameters,
+    http.Client Function() httpClientFactory = http.Client.new,
+    CacheDirectoryProvider cacheDirectoryProvider = getTemporaryDirectory,
+  }) {
+    assert(instance == null ||
+        io.Platform.environment.containsKey('FLUTTER_TEST'));
+    return DefaultCacheManager._(
+      stalePeriod,
+      maxNrOfCacheObjects,
+      connectionParameters,
+      httpClientFactory,
+      cacheDirectoryProvider,
+    )._doInit();
+  }
 
   /// Duration before cached files are considered stale.
   final Duration stalePeriod;
@@ -85,43 +107,13 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   /// Hive registry.
   final HiveInterface _hive = HiveImpl();
 
-  Box<Map>? _cacheBox;
+  Box<CacheEntryMetadata>? _cacheBox;
   String? _cacheDir;
 
-  /// Guards [_doInit] so that concurrent callers (e.g. multiple images
-  /// loading at the same time on cold start) share the same init future.
-  Completer<void>? _initCompleter;
+  String get cacheDir => _cacheDir!;
 
-  /// Initialize Hive and open the cache metadata box.
-  ///
-  /// Uses a [Completer] to ensure that only one initialization runs at a
-  /// time, even when multiple callers invoke this concurrently.
-  Future<void> _ensureInitialized() {
-    final currentCompleter = _initCompleter;
-    if (currentCompleter != null) return currentCompleter.future;
-
-    final completer = Completer<void>();
-    _initCompleter = completer;
-
-    _doInit().then((_) {
-      if (!completer.isCompleted) {
-        completer.complete();
-      }
-    }).catchError((Object e, StackTrace s) {
-      // Allow retry on next call by clearing the completer that initiated
-      // this initialization sequence.
-      if (identical(_initCompleter, completer)) {
-        _initCompleter = null;
-      }
-      if (!completer.isCompleted) {
-        completer.completeError(e, s);
-      }
-    });
-
-    return completer.future;
-  }
-
-  Future<void> _doInit() async {
+  Future<DefaultCacheManager> _doInit() async {
+    instance = this;
     final dir = await _cacheDirectoryProvider();
     _cacheDir = path.join(dir.path, 'cached_network_image_ce');
     await io.Directory(_cacheDir!).create(recursive: true);
@@ -129,11 +121,14 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     final hivePath = path.join(_cacheDir!, 'hive');
     await io.Directory(hivePath).create(recursive: true);
 
+    _hive.registerAdapter(CacheEntryMetadataAdapter());
+
     // Open the box with an explicit path on the private Hive instance.
     // This avoids calling Hive.init() which would conflict with the
     // host application's own Hive initialization.
     try {
-      _cacheBox = await _hive.openBox<Map>(_kBoxName, path: hivePath);
+      _cacheBox =
+          await _hive.openBox<CacheEntryMetadata>(_kBoxName, path: hivePath);
     } on HiveError catch (e) {
       // Box corruption (e.g. "Cannot read, unknown typeId: 121").
       // Since this is a cache, we can safely delete the corrupted box
@@ -143,7 +138,8 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
         CacheManagerLogLevel.warning,
       );
       await _safeDeleteBox(_kBoxName, hivePath);
-      _cacheBox = await _hive.openBox<Map>(_kBoxName, path: hivePath);
+      _cacheBox =
+          await _hive.openBox<CacheEntryMetadata>(_kBoxName, path: hivePath);
 
       // Also remove cached files since their metadata is gone.
       await _deleteCacheFiles();
@@ -151,6 +147,8 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
 
     // Run cleanup in background
     unawaited(_cleanupOldFiles());
+
+    return this;
   }
 
   /// Attempts to delete a Hive box from disk, tolerating missing files.
@@ -177,7 +175,7 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   Future<void> _deleteCacheFiles() async {
     try {
       final cacheDir = io.Directory(_cacheDir!);
-      if (await cacheDir.exists()) {
+      if (cacheDir.existsSync()) {
         await for (final entity in cacheDir.list()) {
           if (entity is io.File) {
             await entity.delete();
@@ -196,8 +194,8 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     return path.join(_cacheDir!, relativePath);
   }
 
-  Future<void> _ensureCacheDirectoryExists() async {
-    await io.Directory(_cacheDir!).create(recursive: true);
+  Future<void> _ensureCacheDirectoryExists() {
+    return io.Directory(_cacheDir!).create(recursive: true);
   }
 
   /// Builds a relative file path from key and extension.
@@ -227,26 +225,14 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     String? key,
     Map<String, String>? headers,
     bool withProgress = false,
-  }) {
-    final controller = StreamController<FileResponse>();
-    _pushFileToStream(controller, url, key ?? url, headers, withProgress);
-    return controller.stream;
-  }
-
-  Future<void> _pushFileToStream(
-    StreamController<FileResponse> controller,
-    String url,
-    String key,
-    Map<String, String>? headers,
-    bool withProgress,
-  ) async {
-    await _ensureInitialized();
+  }) async* {
+    key ??= url;
 
     FileInfo? cachedFile;
     try {
       cachedFile = await getFileFromCache(key);
       if (cachedFile != null) {
-        controller.add(cachedFile);
+        yield cachedFile;
         withProgress = false;
       }
     } on Object catch (e) {
@@ -260,11 +246,10 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
       try {
         await for (final response
             in _downloadFile(url, key, headers, withProgress)) {
-          if (response is DownloadProgress && withProgress) {
-            controller.add(response);
-          }
-          if (response is FileInfo) {
-            controller.add(response);
+          if (response is DownloadProgress) {
+            if (withProgress) yield response;
+          } else {
+            yield response;
           }
         }
       } on Object catch (e) {
@@ -272,20 +257,48 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
           'CacheManager: Failed to download file from $url with error:\n$e',
           CacheManagerLogLevel.debug,
         );
-        if (cachedFile == null && controller.hasListener) {
-          controller.addError(e);
-        }
         if (cachedFile != null &&
             e is HttpExceptionWithStatus &&
             e.statusCode == 404) {
-          if (controller.hasListener) {
-            controller.addError(e);
-          }
           await removeFile(key);
         }
+        rethrow;
       }
     }
-    await controller.close();
+  }
+
+  @override
+  Future<File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  }) async {
+    key ??= url;
+
+    FileInfo? cachedFile;
+    try {
+      cachedFile = await getFileFromCache(key);
+    } on Object catch (e) {
+      cacheLogger.log(
+        'CacheManager: Failed to load cached file for $url with error:\n$e',
+        CacheManagerLogLevel.debug,
+      );
+    }
+
+    if (cachedFile == null || cachedFile.validTill.isBefore(DateTime.now())) {
+      try {
+        return ((await _downloadFile(url, key, headers, false).last)
+                as FileInfo)
+            .file;
+      } on HttpExceptionWithStatus catch (e) {
+        if (cachedFile != null && e.statusCode == 404) {
+          await removeFile(key);
+        }
+        rethrow;
+      }
+    } else {
+      return cachedFile.file;
+    }
   }
 
   Stream<FileResponse> _downloadFile(
@@ -407,7 +420,7 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
             validTill: validTill,
             eTag: eTag,
             length: receivedBytes,
-          ).toMap());
+          ));
 
       final localFile = const LocalFileSystem().file(filePath);
       yield FileInfo(localFile, FileSource.Online, validTill, url);
@@ -421,18 +434,16 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     String key, {
     bool ignoreMemCache = false,
   }) async {
-    await _ensureInitialized();
+    key = _sanitizeBoxKey(key);
 
-    final raw = _cacheBox!.get(_sanitizeBoxKey(key));
-    if (raw == null) return null;
-
-    final metadata = CacheEntryMetadata.fromMap(raw);
+    final metadata = _cacheBox!.get(key);
+    if (metadata == null) return null;
 
     final filePath = _cacheFilePath(metadata.relativePath);
     final file = io.File(filePath);
     if (!file.existsSync()) {
       // Metadata exists but file is missing, clean up
-      await _cacheBox!.delete(_sanitizeBoxKey(key));
+      await _cacheBox!.delete(key);
       return null;
     }
 
@@ -450,8 +461,6 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     Duration maxAge = _kDefaultMaxAge,
     String fileExtension = 'file',
   }) async {
-    await _ensureInitialized();
-
     key ??= url;
     final relativePath = _generateRelativePath(key, fileExtension);
     final filePath = _cacheFilePath(relativePath);
@@ -470,18 +479,15 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
           validTill: validTill,
           eTag: eTag,
           length: fileBytes.length,
-        ).toMap());
+        ));
 
     return const LocalFileSystem().file(filePath);
   }
 
   @override
   Future<void> removeFile(String key) async {
-    await _ensureInitialized();
-
-    final raw = _cacheBox!.get(_sanitizeBoxKey(key));
-    if (raw != null) {
-      final metadata = CacheEntryMetadata.fromMap(raw);
+    final metadata = _cacheBox!.get(_sanitizeBoxKey(key));
+    if (metadata != null) {
       final file = io.File(_cacheFilePath(metadata.relativePath));
       if (await file.exists()) {
         await file.delete();
@@ -492,13 +498,10 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
 
   @override
   Future<void> emptyCache() async {
-    await _ensureInitialized();
-
     // Delete all cached files
-    for (final key in _cacheBox!.keys.toList()) {
-      final raw = _cacheBox!.get(key);
-      if (raw != null) {
-        final metadata = CacheEntryMetadata.fromMap(raw);
+    for (final key in _cacheBox!.keys) {
+      final metadata = _cacheBox!.get(key);
+      if (metadata != null) {
         final file = io.File(_cacheFilePath(metadata.relativePath));
         if (await file.exists()) {
           await file.delete();
@@ -511,63 +514,50 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
 
   @override
   Future<void> dispose() async {
-    final inFlightInit = _initCompleter;
-    if (inFlightInit != null) {
-      try {
-        await inFlightInit.future;
-      } on Object catch (_) {
-        // Ignore init errors during dispose.
-      }
-    }
-
     if (_cacheBox != null && _cacheBox!.isOpen) {
       try {
         await _cacheBox!.close();
-      } on Object catch (_) {
+      } catch (_) {
         // Ignore errors when closing box (e.g. PathNotFoundException if the
         // cache directory was deleted before dispose was called).
       }
     }
     try {
       await _hive.close();
-    } on Object catch (_) {
+    } catch (_) {
       // Ignore errors when closing Hive (e.g. residual lock file already gone).
     }
 
     _cacheBox = null;
     _cacheDir = null;
-    _initCompleter = null;
+    instance = null;
   }
 
   /// Clean up files that haven't been used in a while.
   Future<void> _cleanupOldFiles() async {
     try {
       final now = DateTime.now();
-      final entries = <MapEntry<dynamic, CacheEntryMetadata>>[];
-
-      for (final key in _cacheBox!.keys.toList()) {
-        final raw = _cacheBox!.get(key);
-        if (raw != null) {
-          entries.add(MapEntry(key, CacheEntryMetadata.fromMap(raw)));
-        }
-      }
 
       // Remove expired entries
-      for (final entry in entries) {
-        if (entry.value.validTill.isBefore(now)) {
-          final file = io.File(_cacheFilePath(entry.value.relativePath));
+      final map = _cacheBox!.toMap();
+      final keysToRemove = <dynamic>[];
+      for (var key in map.keys) {
+        final value = map[key]!;
+        if (value.validTill.isBefore(now)) {
+          final file = io.File(_cacheFilePath(value.relativePath));
           if (await file.exists()) {
             await file.delete();
           }
-          await _cacheBox!.delete(entry.key);
+          keysToRemove.add(key);
         }
       }
 
       // If cache is still too large, remove oldest entries
-      if (_cacheBox!.length > maxNrOfCacheObjects) {
-        final sortedEntries = entries
-            .where((e) => _cacheBox!.containsKey(e.key))
-            .toList()
+      if (_cacheBox!.length - keysToRemove.length > maxNrOfCacheObjects) {
+        for (var key in keysToRemove) {
+          map.remove(key);
+        }
+        final sortedEntries = map.entries.toList()
           ..sort((a, b) => a.value.validTill.compareTo(b.value.validTill));
 
         final toRemove = sortedEntries.length - maxNrOfCacheObjects;
@@ -577,15 +567,20 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
           if (await file.exists()) {
             await file.delete();
           }
-          await _cacheBox!.delete(entry.key);
+          keysToRemove.add(entry.key);
         }
       }
+      await _cacheBox!.deleteAll(keysToRemove);
     } on Object catch (e) {
       cacheLogger.log(
         'CacheManager: Error during cleanup: $e',
         CacheManagerLogLevel.warning,
       );
     }
+  }
+
+  int getTotalLength() {
+    return _cacheBox!.values.fold(0, (p, n) => p + n.length);
   }
 
   // ---- ImageCacheManager mixin implementation ----

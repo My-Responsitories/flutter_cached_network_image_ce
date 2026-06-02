@@ -4,7 +4,7 @@ import 'package:file/file.dart';
 ///
 /// A [FileResponse] is either a [FileInfo] object for fully downloaded files
 /// or a [DownloadProgress] object for when a file is being downloaded.
-abstract class FileResponse {
+sealed class FileResponse {
   const FileResponse(this.originalUrl);
 
   /// Url from which the file was fetched.
@@ -41,9 +41,9 @@ class FileInfo extends FileResponse {
     this.file,
     this.source,
     this.validTill,
-    String originalUrl, {
+    super.originalUrl, {
     this.statusCode = 200,
-  }) : super(originalUrl);
+  });
 
   /// The fetched file.
   final File file;

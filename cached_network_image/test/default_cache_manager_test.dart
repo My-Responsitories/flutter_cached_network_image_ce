@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' as io;
 
+import 'package:cached_network_image_ce/src/cache/cache_entry_metadata_adapter.dart';
 import 'package:cached_network_image_ce/src/cache/default_cache_manager.dart';
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart';
 import 'package:flutter/services.dart';
@@ -69,14 +70,14 @@ void main() {
   // ---- Constructor tests ----
 
   group('DefaultCacheManager constructor', () {
-    test('uses default values', () {
-      final manager = DefaultCacheManager();
+    test('uses default values', () async {
+      final manager = await DefaultCacheManager.init();
       expect(manager.stalePeriod, const Duration(days: 7));
       expect(manager.maxNrOfCacheObjects, 200);
     });
 
-    test('accepts custom values', () {
-      final manager = DefaultCacheManager(
+    test('accepts custom values', () async {
+      final manager = await DefaultCacheManager.init(
         stalePeriod: const Duration(days: 14),
         maxNrOfCacheObjects: 50,
       );
@@ -84,8 +85,8 @@ void main() {
       expect(manager.maxNrOfCacheObjects, 50);
     });
 
-    test('accepts custom httpClientFactory', () {
-      final manager = DefaultCacheManager(
+    test('accepts custom httpClientFactory', () async {
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('', 200),
         ),
@@ -102,7 +103,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -130,7 +131,7 @@ void main() {
 
   group('DefaultCacheManager concurrent initialization', () {
     test('parallel operations on cold manager do not throw', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
 
       // Fire multiple cache operations in parallel before init completes.
       // Before the fix this would trigger multiple Hive.init / openBox calls.
@@ -161,7 +162,7 @@ void main() {
     });
 
     test('parallel getFileFromCache on cold manager do not throw', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
 
       // Pre-populate via a single call, then dispose to reset state
       await manager.putFile(
@@ -172,7 +173,7 @@ void main() {
       await manager.dispose();
 
       // Now create a fresh manager and fire parallel reads
-      final manager2 = DefaultCacheManager();
+      final manager2 = await DefaultCacheManager.init();
       final futures = List.generate(
         10,
         (_) => manager2.getFileFromCache(
@@ -205,7 +206,7 @@ void main() {
       });
 
       // The library's DefaultCacheManager should work independently
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/isolated.bin',
         [1, 2, 3],
@@ -235,10 +236,10 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager1 = DefaultCacheManager(
+      final manager1 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => dir1,
       );
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => dir2,
       );
 
@@ -295,7 +296,7 @@ void main() {
 
       // The library should still function correctly using its own private
       // Hive instance, not the global one.
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/after-host-init.bin',
         [1, 2, 3],
@@ -328,7 +329,7 @@ void main() {
       await hostBox.put('greeting', 'hello');
 
       // Use the library's cache manager
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/no-interference.bin',
         [10, 20, 30],
@@ -345,7 +346,7 @@ void main() {
     test('library does not register boxes on the global Hive singleton',
         () async {
       // Ensure the global Hive does not know about our box
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/global-check.bin',
         [1],
@@ -364,7 +365,7 @@ void main() {
 
   group('Regression: _ensureInitialized race condition', () {
     test('concurrent putFile calls on a cold manager all succeed', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
 
       // Launch 20 putFile calls simultaneously on a never-initialized manager.
       // Before the Completer fix, this would trigger parallel Hive.init and
@@ -397,7 +398,7 @@ void main() {
     test('concurrent getFileStream calls on a cold manager all succeed',
         () async {
       var downloadCount = 0;
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
             downloadCount++;
@@ -434,7 +435,7 @@ void main() {
     });
 
     test('mixed concurrent operations on a cold manager', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('img', 200),
         ),
@@ -462,7 +463,25 @@ void main() {
       var callCount = 0;
 
       // First call will fail, second will succeed
-      final manager = DefaultCacheManager(
+      // First call should fail
+      Object? error;
+      DefaultCacheManager manager;
+      try {
+        manager = await DefaultCacheManager.init(
+          cacheDirectoryProvider: () async {
+            callCount++;
+            if (callCount == 1) {
+              throw const io.FileSystemException('Simulated permission error');
+            }
+            return testTempDir;
+          },
+        );
+      } on Object catch (e) {
+        error = e;
+      }
+      expect(error, isA<io.FileSystemException>());
+
+      manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async {
           callCount++;
           if (callCount == 1) {
@@ -472,18 +491,11 @@ void main() {
         },
       );
 
-      // First call should fail
-      Object? error;
-      try {
-        await manager.putFile(
-          'https://example.com/retry-test.bin',
-          [1],
-          fileExtension: 'bin',
-        );
-      } on Object catch (e) {
-        error = e;
-      }
-      expect(error, isA<io.FileSystemException>());
+      await manager.putFile(
+        'https://example.com/retry-test.bin',
+        [1],
+        fileExtension: 'bin',
+      );
 
       // Second call should succeed (completer was cleared on error)
       await manager.putFile(
@@ -500,39 +512,8 @@ void main() {
       await manager.dispose();
     });
 
-    test('concurrent calls during init failure all receive the same error',
-        () async {
-      final manager = DefaultCacheManager(
-        cacheDirectoryProvider: () async {
-          throw const io.FileSystemException('Simulated init failure');
-        },
-      );
-
-      // Launch 5 calls simultaneously, all should get the same error
-      final futures = List.generate(
-        5,
-        (i) => manager
-            .putFile(
-              'https://example.com/fail-$i.bin',
-              [i],
-              fileExtension: 'bin',
-            )
-            .then((_) => null as Object?)
-            .catchError((Object e) => e),
-      );
-
-      final results = await Future.wait(futures);
-      for (var i = 0; i < 5; i++) {
-        expect(
-          results[i],
-          isA<io.FileSystemException>(),
-          reason: 'Call $i should have received the init error',
-        );
-      }
-    });
-
     test('rapid dispose-and-reuse cycle does not corrupt state', () async {
-      final manager = DefaultCacheManager();
+      var manager = await DefaultCacheManager.init();
 
       for (var cycle = 0; cycle < 5; cycle++) {
         await manager.putFile(
@@ -540,10 +521,11 @@ void main() {
           [cycle],
           fileExtension: 'bin',
         );
-        await manager.dispose();
       }
+      await manager.dispose();
 
       // After the last dispose, re-initialize and check the last entry
+      manager = await DefaultCacheManager.init();
       final cached = await manager.getFileFromCache(
         'https://example.com/cycle-4.bin',
       );
@@ -567,7 +549,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -608,7 +590,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('runtime-download', 200),
@@ -648,7 +630,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
       await manager.putFile(
@@ -678,7 +660,7 @@ void main() {
       expect(io.File(filePath).existsSync(), isTrue);
 
       // Re-create the manager — it should re-initialize cleanly
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -713,7 +695,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
       await manager.putFile(
@@ -758,7 +740,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
       await manager.putFile(
@@ -776,7 +758,7 @@ void main() {
       }
 
       // Re-create and verify it rebuilds from scratch
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -809,7 +791,7 @@ void main() {
         } on Object catch (_) {}
       });
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => supportDir,
       );
 
@@ -850,7 +832,7 @@ void main() {
       });
 
       // First, create a valid cache entry so files exist on disk.
-      final manager1 = DefaultCacheManager(
+      final manager1 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
       await manager1.putFile(
@@ -869,7 +851,9 @@ void main() {
       // or leftover data from a removed adapter.
       final hivePath = '${customDir.path}/cached_network_image_ce/hive';
       final poisonHive = HiveImpl();
-      poisonHive.registerAdapter(_CorruptPayloadAdapter());
+      poisonHive
+        ..registerAdapter(CacheEntryMetadataAdapter())
+        ..registerAdapter(_CorruptPayloadAdapter());
       final poisonBox = await poisonHive.openBox(
         'cached_network_image_cache',
         path: hivePath,
@@ -879,7 +863,7 @@ void main() {
       await poisonHive.close();
 
       // Re-create the manager — it should recover from corruption.
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -915,7 +899,7 @@ void main() {
       });
 
       // Create a valid cache first, then poison the box.
-      final manager1 = DefaultCacheManager(
+      final manager1 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
       await manager1.putFile(
@@ -928,7 +912,9 @@ void main() {
       // Poison the box with an unregistered typeId entry.
       final hivePath = '${customDir.path}/cached_network_image_ce/hive';
       final poisonHive = HiveImpl();
-      poisonHive.registerAdapter(_CorruptPayloadAdapter());
+      poisonHive
+        ..registerAdapter(CacheEntryMetadataAdapter())
+        ..registerAdapter(_CorruptPayloadAdapter());
       final poisonBox = await poisonHive.openBox(
         'cached_network_image_cache',
         path: hivePath,
@@ -938,7 +924,7 @@ void main() {
       await poisonHive.close();
 
       // Create a new manager and fire concurrent operations.
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         cacheDirectoryProvider: () async => customDir,
       );
 
@@ -971,8 +957,8 @@ void main() {
   group('DefaultCacheManager cache operations', () {
     late DefaultCacheManager manager;
 
-    setUp(() {
-      manager = DefaultCacheManager();
+    setUp(() async {
+      manager = await DefaultCacheManager.init();
     });
 
     tearDown(() async {
@@ -1085,7 +1071,7 @@ void main() {
       await manager.putFile(url, [1, 2], fileExtension: 'bin');
       await manager.dispose();
 
-      manager = DefaultCacheManager();
+      manager = await DefaultCacheManager.init();
       final cached = await manager.getFileFromCache(url);
       expect(cached, isNotNull);
     });
@@ -1110,7 +1096,7 @@ void main() {
         0x00, 0x00, 0x00, 0x01,
       ];
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
             expect(request.url.toString(), 'https://example.com/download.png');
@@ -1137,7 +1123,7 @@ void main() {
     });
 
     test('downloads with progress reporting', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient.streaming(
           (request, bodyStream) async {
             final controller = StreamController<List<int>>();
@@ -1170,7 +1156,7 @@ void main() {
     test('passes custom headers to HTTP request', () async {
       String? receivedAuth;
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
             receivedAuth = request.headers['Authorization'];
@@ -1189,7 +1175,7 @@ void main() {
 
     test('error on HTTP 404 is propagated to stream (no cached file)',
         () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('Not Found', 404),
         ),
@@ -1209,7 +1195,7 @@ void main() {
     });
 
     test('error on HTTP 500 is propagated to stream', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('Server Error', 500),
         ),
@@ -1232,7 +1218,7 @@ void main() {
         () async {
       var downloadCount = 0;
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
             downloadCount++;
@@ -1260,7 +1246,7 @@ void main() {
     test('re-downloads when cached file is expired', () async {
       var downloadCount = 0;
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         stalePeriod: Duration.zero, // Expire immediately
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
@@ -1286,7 +1272,7 @@ void main() {
 
     test('handles 404 on re-download of existing cached entry', () async {
       var callCount = 0;
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         stalePeriod: Duration.zero,
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
@@ -1330,8 +1316,8 @@ void main() {
   group('DefaultCacheManager.getFileStream with key', () {
     late DefaultCacheManager manager;
 
-    setUp(() {
-      manager = DefaultCacheManager();
+    setUp(() async {
+      manager = await DefaultCacheManager.init();
     });
 
     tearDown(() async {
@@ -1365,7 +1351,7 @@ void main() {
     });
 
     test('delegates to getFileStream when no resize needed', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('img-data', 200),
         ),
@@ -1381,7 +1367,7 @@ void main() {
     test('delegates to getFileStream with headers and progress', () async {
       String? receivedAuth;
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async {
             receivedAuth = request.headers['Authorization'];
@@ -1403,7 +1389,7 @@ void main() {
     });
 
     test('uses key parameter', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('img-data', 200),
         ),
@@ -1420,7 +1406,7 @@ void main() {
   group('DefaultCacheManager helper methods', () {
     test('_getFileExtensionFromUrl extracts extension', () async {
       // We test this indirectly through putFile / getFileStream
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('data', 200),
         ),
@@ -1439,7 +1425,7 @@ void main() {
     });
 
     test('_generateRelativePath produces consistent paths', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       // Same URL should produce same cache file
       const url = 'https://example.com/consistent.png';
 
@@ -1457,7 +1443,7 @@ void main() {
   group('DefaultCacheManager._cleanupOldFiles', () {
     test('removes expired entries during initialization', () async {
       // First, put an entry with zero stale period
-      final manager1 = DefaultCacheManager(
+      final manager1 = await DefaultCacheManager.init(
         stalePeriod: Duration.zero,
       );
 
@@ -1471,7 +1457,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       // Create a new manager — _ensureInitialized triggers _cleanupOldFiles
-      final manager2 = DefaultCacheManager();
+      final manager2 = await DefaultCacheManager.init();
 
       // Trigger initialization by accessing the cache
       await manager2.getFileFromCache('dummy-key-to-trigger-init');
@@ -1489,7 +1475,7 @@ void main() {
     });
 
     test('respects maxNrOfCacheObjects limit', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         maxNrOfCacheObjects: 2,
       );
 
@@ -1507,7 +1493,7 @@ void main() {
       await manager.dispose();
 
       // Re-initialize — cleanup should trim to maxNrOfCacheObjects
-      final manager2 = DefaultCacheManager(
+      final manager2 = await DefaultCacheManager.init(
         maxNrOfCacheObjects: 2,
       );
 
@@ -1581,13 +1567,13 @@ void main() {
       } on Object catch (_) {}
     });
 
-    test('connectionParameters defaults to null', () {
-      manager = DefaultCacheManager();
+    test('connectionParameters defaults to null', () async {
+      manager = await DefaultCacheManager.init();
       expect(manager.connectionParameters, isNull);
     });
 
-    test('accepts connectionParameters', () {
-      manager = DefaultCacheManager(
+    test('accepts connectionParameters', () async {
+      manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
           connectionTimeout: const Duration(seconds: 10),
           requestTimeout: const Duration(seconds: 30),
@@ -1606,7 +1592,7 @@ void main() {
 
     test('connectionTimeout triggers TimeoutException when server is slow',
         () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
           connectionTimeout: const Duration(milliseconds: 100),
         ),
@@ -1626,7 +1612,7 @@ void main() {
 
     test('requestTimeout triggers TimeoutException when stream stalls',
         () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
           requestTimeout: const Duration(milliseconds: 100),
         ),
@@ -1650,7 +1636,7 @@ void main() {
     });
 
     test('no timeout when connectionParameters is null', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('data', 200),
         ),
@@ -1664,7 +1650,7 @@ void main() {
     });
 
     test('successful download with connectionParameters set', () async {
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
           connectionTimeout: const Duration(seconds: 5),
           requestTimeout: const Duration(seconds: 5),
@@ -1684,7 +1670,7 @@ void main() {
     test('client is closed even when connectionTimeout fires', () async {
       var clientClosed = false;
 
-      manager = DefaultCacheManager(
+      manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
           connectionTimeout: const Duration(milliseconds: 50),
         ),
@@ -1716,7 +1702,7 @@ void main() {
 
   group('Hive string key length limit fix', () {
     test('handles keys longer than 255 characters without HiveError', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('data', 200),
         ),

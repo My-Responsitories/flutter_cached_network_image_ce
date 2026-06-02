@@ -72,6 +72,17 @@ abstract class BaseCacheManager {
     Duration maxAge = const Duration(days: 30),
     String fileExtension = 'file',
   });
+
+  Future<File> getSingleFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+  });
+
+  @Deprecated('use [getFileFromMemory]')
+  Future<FileInfo?> getFileFromMemory(String key,
+          {bool ignoreMemCache = false}) =>
+      getFileFromCache(key, ignoreMemCache: ignoreMemCache);
 }
 
 /// Concrete base implementation of [BaseCacheManager].
@@ -81,6 +92,11 @@ abstract class BaseCacheManager {
 abstract class CacheManager implements BaseCacheManager {
   /// The global log level for all cache manager instances.
   static CacheManagerLogLevel logLevel = CacheManagerLogLevel.none;
+
+  @Deprecated('use [getFileFromMemory]')
+  Future<FileInfo?> getFileFromMemory(String key,
+          {bool ignoreMemCache = false}) =>
+      getFileFromCache(key, ignoreMemCache: ignoreMemCache);
 }
 
 /// Extended cache manager with image-specific methods.

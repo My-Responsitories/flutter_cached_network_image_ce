@@ -63,7 +63,7 @@ void main() {
   // ===========================================================================
   group('Leak: getFileStream StreamController', () {
     test('StreamController is closed after successful download', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('data', 200),
         ),
@@ -82,7 +82,7 @@ void main() {
     });
 
     test('StreamController is closed after HTTP error', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('err', 500),
         ),
@@ -103,7 +103,7 @@ void main() {
 
     test('StreamController is closed when download throws mid-stream',
         () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient.streaming(
           (request, bodyStream) async {
             final controller = StreamController<List<int>>();
@@ -139,7 +139,7 @@ void main() {
     test('client.close() called after successful download', () async {
       var clientClosed = false;
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () {
           final mock = http_testing.MockClient(
             (request) async => http.Response('ok', 200),
@@ -165,7 +165,7 @@ void main() {
     test('client.close() called after HTTP error', () async {
       var clientClosed = false;
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () {
           final mock = http_testing.MockClient(
             (request) async => http.Response('fail', 500),
@@ -191,7 +191,7 @@ void main() {
     test('client.close() called when send() throws', () async {
       var clientClosed = false;
 
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () {
           final mock = http_testing.MockClient(
             (request) async =>
@@ -221,7 +221,7 @@ void main() {
   // ===========================================================================
   group('Leak: file sink closure', () {
     test('file sink is closed on successful download', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient(
           (request) async => http.Response('data-for-sink', 200),
         ),
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('file sink is closed when stream errors mid-download', () async {
-      final manager = DefaultCacheManager(
+      final manager = await DefaultCacheManager.init(
         httpClientFactory: () => http_testing.MockClient.streaming(
           (request, bodyStream) async {
             final controller = StreamController<List<int>>();
@@ -577,7 +577,7 @@ void main() {
   // ===========================================================================
   group('Leak: Hive box lifecycle', () {
     test('dispose closes the Hive box', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/hive-dispose.bin',
         [1, 2, 3],
@@ -588,7 +588,7 @@ void main() {
       await manager.dispose();
 
       // Re-opening should work (box was properly closed)
-      final manager2 = DefaultCacheManager();
+      final manager2 = await DefaultCacheManager.init();
       final cached = await manager2.getFileFromCache(
         'https://example.com/hive-dispose.bin',
       );
@@ -599,7 +599,7 @@ void main() {
     });
 
     test('double dispose does not throw', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/double-dispose.bin',
         [1, 2],
@@ -612,7 +612,7 @@ void main() {
     });
 
     test('emptyCache followed by dispose is safe', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/empty-then-dispose.bin',
         [1, 2, 3],
@@ -623,7 +623,7 @@ void main() {
       await manager.dispose();
 
       // Re-open and verify it's empty
-      final manager2 = DefaultCacheManager();
+      final manager2 = await DefaultCacheManager.init();
       final cached = await manager2.getFileFromCache(
         'https://example.com/empty-then-dispose.bin',
       );
@@ -633,7 +633,7 @@ void main() {
     });
 
     test('operations after dispose re-initialize gracefully', () async {
-      final manager = DefaultCacheManager();
+      final manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/reuse-after-dispose.bin',
         [1],

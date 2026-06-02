@@ -122,7 +122,7 @@ class _BenchmarkContentState extends State<BenchmarkContent>
     });
 
     final originalManager = original.DefaultCacheManager();
-    final ceManager = ce.DefaultCacheManager();
+    final ceManager = await ce.DefaultCacheManager.init();
 
     try {
       for (var sizeIdx = 0; sizeIdx < _fileSizes.length; sizeIdx++) {

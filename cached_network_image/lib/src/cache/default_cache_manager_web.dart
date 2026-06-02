@@ -239,6 +239,34 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
     await controller.close();
   }
 
+  @override
+  Future<File> getSingleFile(String url, {String? key, Map<String, String>? headers}) async {
+    key ??= url;
+
+    FileInfo? cachedFile;
+    try {
+      cachedFile = await getFileFromCache(key);
+    } on Object catch (e) {
+      cacheLogger.log(
+        'CacheManager: Failed to load cached file for $url with error:\n$e',
+        CacheManagerLogLevel.debug,
+      );
+    }
+
+    if (cachedFile == null || cachedFile.validTill.isBefore(DateTime.now())) {
+      try {
+        return ((await _downloadFile(url, key, headers, false).last) as FileInfo).file;
+      } on HttpExceptionWithStatus catch (e) {
+        if (cachedFile != null && e.statusCode == 404) {
+          await removeFile(key);
+        }
+        rethrow;
+      }
+    } else {
+      return cachedFile.file;
+    }
+  }
+
   Stream<FileResponse> _downloadFile(
     String url,
     String key,
