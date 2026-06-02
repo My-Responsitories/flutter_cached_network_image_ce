@@ -310,7 +310,7 @@ class CachedNetworkImage extends StatefulWidget {
     this.imageRenderMethodForWeb = ImageRenderMethodForWeb.HtmlImage,
     this.scale = 1.0,
     this.minimumGifFrameDuration = const Duration(milliseconds: 100),
-    this.disablePlaceholderOnCacheHit = true,
+    this.disablePlaceholderOnCacheHit = false,
   });
 
   @override
