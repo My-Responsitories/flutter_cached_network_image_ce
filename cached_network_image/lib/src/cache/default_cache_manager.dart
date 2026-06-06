@@ -7,8 +7,6 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image_ce/src/cache/cache_entry_metadata_adapter.dart';
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart';
 import 'package:crypto/crypto.dart';
-import 'package:file/file.dart';
-import 'package:file/local.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hive_ce/hive.dart';
 // ignore: implementation_imports
@@ -268,7 +266,7 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   }
 
   @override
-  Future<File> getSingleFile(
+  Future<io.File> getSingleFile(
     String url, {
     String? key,
     Map<String, String>? headers,
@@ -422,7 +420,7 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
             length: receivedBytes,
           ));
 
-      final localFile = const LocalFileSystem().file(filePath);
+      final localFile = io.File(filePath);
       yield FileInfo(localFile, FileSource.Online, validTill, url);
     } finally {
       client.close();
@@ -447,13 +445,13 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
       return null;
     }
 
-    final localFile = const LocalFileSystem().file(filePath);
+    final localFile = io.File(filePath);
     return FileInfo(
         localFile, FileSource.Cache, metadata.validTill, metadata.url);
   }
 
   @override
-  Future<File> putFile(
+  Future<io.File> putFile(
     String url,
     List<int> fileBytes, {
     String? key,
@@ -481,7 +479,7 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
           length: fileBytes.length,
         ));
 
-    return const LocalFileSystem().file(filePath);
+    return io.File(filePath);
   }
 
   @override
@@ -722,13 +720,13 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
 }
 
 Future<ui.Image> _decodeImage(
-  File file, {
+  io.File file, {
   int? width,
   int? height,
   bool allowUpscaling = false,
 }) {
   final shouldResize = width != null || height != null;
-  final fileImage = FileImage(file as io.File);
+  final fileImage = FileImage(file);
   final image = shouldResize
       ? ResizeImage(
           fileImage,

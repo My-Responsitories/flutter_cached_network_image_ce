@@ -1,11 +1,10 @@
 // ignore_for_file: deprecated_member_use_from_same_package
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart';
-import 'package:file/file.dart';
-import 'package:file/memory.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -142,7 +141,7 @@ void main() {
 
   group('FileInfo', () {
     test('constructor with default statusCode', () {
-      final file = MemoryFileSystem().file('/test.png');
+      final file = File('/test.png');
       final validTill = DateTime.now().add(const Duration(days: 1));
       final info = FileInfo(
         file,
@@ -159,7 +158,7 @@ void main() {
     });
 
     test('constructor with custom statusCode', () {
-      final file = MemoryFileSystem().file('/test.png');
+      final file = File('/test.png');
       final validTill = DateTime.now().add(const Duration(days: 1));
       final info = FileInfo(
         file,
@@ -390,6 +389,16 @@ class MockCacheManager implements BaseCacheManager {
 
   @override
   Future<void> removeFile(String key) {
+    throw UnimplementedError();
+  }
+  
+  @override
+  Future<FileInfo?> getFileFromMemory(String key, {bool ignoreMemCache = false}) {
+    throw UnimplementedError();
+  }
+  
+  @override
+  Future<File> getSingleFile(String url, {String? key, Map<String, String>? headers}) {
     throw UnimplementedError();
   }
 }

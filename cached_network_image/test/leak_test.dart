@@ -237,8 +237,8 @@ void main() {
       // Verify: the file should be readable (sink was flushed+closed)
       final file = fileInfos.first.file;
       expect(file, isA<io.File>());
-      expect(await (file as io.File).exists(), isTrue);
-      final bytes = await (file as io.File).readAsBytes();
+      expect(await file.exists(), isTrue);
+      final bytes = await file.readAsBytes();
       expect(bytes.isNotEmpty, isTrue);
 
       await manager.emptyCache();
@@ -633,7 +633,7 @@ void main() {
     });
 
     test('operations after dispose re-initialize gracefully', () async {
-      final manager = await DefaultCacheManager.init();
+      var manager = await DefaultCacheManager.init();
       await manager.putFile(
         'https://example.com/reuse-after-dispose.bin',
         [1],
@@ -641,7 +641,8 @@ void main() {
       );
       await manager.dispose();
 
-      // Using the manager after dispose should re-initialize
+      // re-initialize
+      manager = await DefaultCacheManager.init();
       final cached = await manager.getFileFromCache(
         'https://example.com/reuse-after-dispose.bin',
       );

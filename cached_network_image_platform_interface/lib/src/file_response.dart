@@ -1,4 +1,5 @@
-import 'package:file/file.dart';
+
+import 'dart:io';
 
 /// Base class for responses from the cache manager.
 ///

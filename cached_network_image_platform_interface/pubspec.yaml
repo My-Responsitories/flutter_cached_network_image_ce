@@ -13,7 +13,6 @@ environment:
   flutter: '>=3.10.0'
 
 dependencies:
-  file: '>=7.0.0 <8.0.0'
   flutter:
     sdk: flutter
 

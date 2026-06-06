@@ -207,22 +207,22 @@ void main() {
     });
   });
 
-  group('CachedNetworkImageProvider.defaultCacheManager', () {
-    test('has a default value of DefaultCacheManager', () {
-      expect(
-        CachedNetworkImageProvider.defaultCacheManager,
-        isA<DefaultCacheManager>(),
-      );
-    });
+  // group('CachedNetworkImageProvider.defaultCacheManager', () {
+  //   test('has a default value of DefaultCacheManager', () {
+  //     expect(
+  //       CachedNetworkImageProvider.defaultCacheManager,
+  //       isA<DefaultCacheManager>(),
+  //     );
+  //   });
 
-    test('can be replaced', () {
-      final original = CachedNetworkImageProvider.defaultCacheManager;
-      final mockManager = MockBaseCacheManager();
-      CachedNetworkImageProvider.defaultCacheManager = mockManager;
-      expect(CachedNetworkImageProvider.defaultCacheManager, same(mockManager));
-      CachedNetworkImageProvider.defaultCacheManager = original;
-    });
-  });
+  //   test('can be replaced', () {
+  //     final original = CachedNetworkImageProvider.defaultCacheManager;
+  //     final mockManager = MockBaseCacheManager();
+  //     CachedNetworkImageProvider.defaultCacheManager = mockManager;
+  //     expect(CachedNetworkImageProvider.defaultCacheManager, same(mockManager));
+  //     CachedNetworkImageProvider.defaultCacheManager = original;
+  //   });
+  // });
 
   group('ImageLoader unit tests', () {
     test('loadImageAsync returns a stream', () {

@@ -326,6 +326,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: CachedNetworkImage(
+              disablePlaceholderOnCacheHit: true,
               imageUrl: imageUrl,
               cacheManager: cacheManager,
               placeholder: (context, url) {
@@ -389,6 +390,7 @@ void main() {
                 body: Column(
                   children: [
                     CachedNetworkImage(
+                      disablePlaceholderOnCacheHit: true,
                       imageUrl: currentUrl,
                       cacheManager: cacheManager,
                       placeholder: (context, url) {

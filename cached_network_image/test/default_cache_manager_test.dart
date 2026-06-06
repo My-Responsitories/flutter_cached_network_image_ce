@@ -387,7 +387,7 @@ void main() {
           'https://example.com/race-put-$i.bin',
         );
         expect(cached, isNotNull, reason: 'Entry $i missing');
-        final bytes = await (cached!.file as io.File).readAsBytes();
+        final bytes = await (cached!.file).readAsBytes();
         expect(bytes.length, i + 1, reason: 'Entry $i has wrong length');
       }
 
@@ -644,7 +644,7 @@ void main() {
         'https://example.com/resilience.bin',
       );
       expect(cached, isNotNull);
-      expect(await (cached!.file as io.File).exists(), isTrue);
+      expect(await (cached!.file).exists(), isTrue);
       final filePath = cached.file.path;
 
       await manager.dispose();
@@ -709,7 +709,7 @@ void main() {
       expect(cached, isNotNull);
 
       // Simulate OS purging just the cached image file (not Hive data)
-      final imageFile = cached!.file as io.File;
+      final imageFile = cached!.file;
       await imageFile.delete();
 
       // getFileFromCache should detect the missing file and return null
@@ -974,7 +974,7 @@ void main() {
           'https://example.com/put-test-${DateTime.now().millisecondsSinceEpoch}.bin';
 
       final file = await manager.putFile(url, bytes, fileExtension: 'bin');
-      expect(await (file as io.File).exists(), isTrue);
+      expect(await file.exists(), isTrue);
       final readBytes = await file.readAsBytes();
       expect(readBytes, bytes);
 
@@ -1026,7 +1026,7 @@ void main() {
           'https://example.com/missing-file-${DateTime.now().millisecondsSinceEpoch}.bin';
       final file = await manager.putFile(url, [1, 2], fileExtension: 'bin');
       // Delete the actual file on disk (simulate corruption)
-      await (file as io.File).delete();
+      await file.delete();
       final cached = await manager.getFileFromCache(url);
       // Should return null and clean up metadata
       expect(cached, isNull);

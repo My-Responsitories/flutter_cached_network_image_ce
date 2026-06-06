@@ -4,7 +4,6 @@ import 'dart:ui' as ui show Codec;
 import 'package:cached_network_image_ce/cached_network_image.dart';
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart'
     if (dart.library.io) '_image_loader.dart'
-    if (dart.library.js_interop) 'package:cached_network_image_web_ce/cached_network_image_web_ce.dart'
     show ImageLoader;
 import 'package:cached_network_image_platform_interface_ce/cached_network_image_platform_interface_ce.dart'
     show ErrorListener, ImageRenderMethodForWeb;
