@@ -73,16 +73,16 @@ void main() {
     test('uses default values', () async {
       final manager = await DefaultCacheManager.init();
       expect(manager.stalePeriod, const Duration(days: 7));
-      expect(manager.maxNrOfCacheObjects, 200);
+      expect(manager.maxNrOfCacheLength, 200);
     });
 
     test('accepts custom values', () async {
       final manager = await DefaultCacheManager.init(
         stalePeriod: const Duration(days: 14),
-        maxNrOfCacheObjects: 50,
+        maxNrOfCacheLength: 50,
       );
       expect(manager.stalePeriod, const Duration(days: 14));
-      expect(manager.maxNrOfCacheObjects, 50);
+      expect(manager.maxNrOfCacheLength, 50);
     });
 
     test('accepts custom httpClientFactory', () async {
@@ -1476,7 +1476,7 @@ void main() {
 
     test('respects maxNrOfCacheObjects limit', () async {
       final manager = await DefaultCacheManager.init(
-        maxNrOfCacheObjects: 2,
+        maxNrOfCacheLength: 2,
       );
 
       // Add 4 entries (exceeds limit of 2)
@@ -1494,7 +1494,7 @@ void main() {
 
       // Re-initialize — cleanup should trim to maxNrOfCacheObjects
       final manager2 = await DefaultCacheManager.init(
-        maxNrOfCacheObjects: 2,
+        maxNrOfCacheLength: 2,
       );
 
       // Trigger initialization
@@ -1524,7 +1524,7 @@ void main() {
     test('toMap produces correct keys', () {
       final metadata = CacheEntryMetadata(
         url: 'https://example.com/test.png',
-        relativePath: 'abc123.png',
+        fileExtension: 'png',
         validTill: DateTime(2025, 6, 15),
         eTag: '"etag"',
         length: 1024,
@@ -1532,7 +1532,7 @@ void main() {
 
       final map = metadata.toMap();
       expect(map['url'], 'https://example.com/test.png');
-      expect(map['relativePath'], 'abc123.png');
+      expect(map['fileExtension'], 'abc123.png');
       expect(map['eTag'], '"etag"');
       expect(map['length'], 1024);
     });
@@ -1540,7 +1540,7 @@ void main() {
     test('fromMap roundtrips correctly', () {
       final original = CacheEntryMetadata(
         url: 'https://example.com/roundtrip.png',
-        relativePath: 'some/path.png',
+        fileExtension: 'png',
         validTill: DateTime(2026, 1, 1),
         eTag: '"v2"',
         length: 512,
@@ -1548,7 +1548,7 @@ void main() {
 
       final reconstructed = CacheEntryMetadata.fromMap(original.toMap());
       expect(reconstructed.url, original.url);
-      expect(reconstructed.relativePath, original.relativePath);
+      expect(reconstructed.fileExtension, original.fileExtension);
       expect(reconstructed.validTill, original.validTill);
       expect(reconstructed.eTag, original.eTag);
       expect(reconstructed.length, original.length);

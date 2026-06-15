@@ -7,14 +7,14 @@ void main() {
       final validTill = DateTime(2025, 1, 1);
       final metadata = CacheEntryMetadata(
         url: 'https://example.com/image.png',
-        relativePath: 'abc123.png',
+        fileExtension: 'png',
         validTill: validTill,
         eTag: '"etag-value"',
         length: 1024,
       );
 
       expect(metadata.url, 'https://example.com/image.png');
-      expect(metadata.relativePath, 'abc123.png');
+      expect(metadata.fileExtension, 'png');
       expect(metadata.validTill, validTill);
       expect(metadata.eTag, '"etag-value"');
       expect(metadata.length, 1024);
@@ -23,7 +23,7 @@ void main() {
     test('constructor defaults length to 0', () {
       final metadata = CacheEntryMetadata(
         url: 'https://example.com/image.png',
-        relativePath: 'abc123.png',
+        fileExtension: 'png',
         validTill: DateTime(2025, 1, 1),
       );
 
@@ -34,7 +34,7 @@ void main() {
     test('fromMap constructs correctly with all fields', () {
       final map = {
         'url': 'https://example.com/image.png',
-        'relativePath': 'abc123.png',
+        'fileExtension': 'png',
         'validTill': DateTime(2025, 6, 15).millisecondsSinceEpoch,
         'eTag': '"some-etag"',
         'length': 2048,
@@ -43,7 +43,7 @@ void main() {
       final metadata = CacheEntryMetadata.fromMap(map);
 
       expect(metadata.url, 'https://example.com/image.png');
-      expect(metadata.relativePath, 'abc123.png');
+      expect(metadata.fileExtension, 'png');
       expect(
         metadata.validTill,
         DateTime.fromMillisecondsSinceEpoch(
@@ -57,7 +57,7 @@ void main() {
     test('fromMap defaults length to 0 when missing', () {
       final map = {
         'url': 'https://example.com/image.png',
-        'relativePath': 'abc123.png',
+        'fileExtension': 'png',
         'validTill': DateTime(2025, 1, 1).millisecondsSinceEpoch,
         'eTag': null,
       };
@@ -72,7 +72,7 @@ void main() {
       final validTill = DateTime(2025, 3, 20);
       final metadata = CacheEntryMetadata(
         url: 'https://example.com/test.jpg',
-        relativePath: 'def456.jpg',
+        fileExtension: 'jpg',
         validTill: validTill,
         eTag: '"my-etag"',
         length: 512,
@@ -81,7 +81,7 @@ void main() {
       final map = metadata.toMap();
 
       expect(map['url'], 'https://example.com/test.jpg');
-      expect(map['relativePath'], 'def456.jpg');
+      expect(map['fileExtension'], 'jpg');
       expect(map['validTill'], validTill.millisecondsSinceEpoch);
       expect(map['eTag'], '"my-etag"');
       expect(map['length'], 512);
@@ -90,7 +90,7 @@ void main() {
     test('toMap → fromMap roundtrip preserves data', () {
       final original = CacheEntryMetadata(
         url: 'https://example.com/roundtrip.png',
-        relativePath: 'roundtrip123.png',
+        fileExtension: 'png',
         validTill: DateTime(2025, 12, 31, 23, 59, 59),
         eTag: '"roundtrip-etag"',
         length: 4096,
@@ -99,7 +99,7 @@ void main() {
       final reconstructed = CacheEntryMetadata.fromMap(original.toMap());
 
       expect(reconstructed.url, original.url);
-      expect(reconstructed.relativePath, original.relativePath);
+      expect(reconstructed.fileExtension, original.fileExtension);
       expect(
         reconstructed.validTill.millisecondsSinceEpoch,
         original.validTill.millisecondsSinceEpoch,
@@ -111,7 +111,7 @@ void main() {
     test('toMap with null eTag', () {
       final metadata = CacheEntryMetadata(
         url: 'https://example.com/no-etag.png',
-        relativePath: 'noetag.png',
+        fileExtension: 'png',
         validTill: DateTime(2025, 1, 1),
       );
 

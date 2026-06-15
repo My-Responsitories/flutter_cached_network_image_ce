@@ -8,7 +8,7 @@ class CacheEntryMetadataAdapter extends TypeAdapter<CacheEntryMetadata> {
   @override
   CacheEntryMetadata read(BinaryReader reader) => CacheEntryMetadata(
         url: reader.readString(),
-        relativePath: reader.readString(),
+        fileExtension: reader.readString(),
         validTill: DateTime.fromMillisecondsSinceEpoch(reader.readInt()),
         length: reader.readUint32(),
         eTag: reader.read(),
@@ -18,7 +18,7 @@ class CacheEntryMetadataAdapter extends TypeAdapter<CacheEntryMetadata> {
   void write(BinaryWriter writer, CacheEntryMetadata obj) {
     writer
       ..writeString(obj.url)
-      ..writeString(obj.relativePath)
+      ..writeString(obj.fileExtension)
       ..writeInt(obj.validTill.millisecondsSinceEpoch)
       ..writeUint32(obj.length)
       ..write(obj.eTag);

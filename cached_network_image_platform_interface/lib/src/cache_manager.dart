@@ -1,17 +1,11 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 
-
 import 'file_response.dart';
 
 /// Log levels of the cache manager. Debug shows failed downloads and verbose
 /// also shows successful downloads and cache retrievals.
-enum CacheManagerLogLevel {
-  none,
-  warning,
-  debug,
-  verbose,
-}
+enum CacheManagerLogLevel { none, warning, debug, verbose }
 
 /// Logger used by the cache manager to log useful information.
 class CacheLogger {
@@ -79,10 +73,11 @@ abstract class BaseCacheManager {
     Map<String, String>? headers,
   });
 
-  @Deprecated('use [getFileFromMemory]')
-  Future<FileInfo?> getFileFromMemory(String key,
-          {bool ignoreMemCache = false}) =>
-      getFileFromCache(key, ignoreMemCache: ignoreMemCache);
+  @Deprecated('use [getFileFromCache]')
+  Future<FileInfo?> getFileFromMemory(
+    String key, {
+    bool ignoreMemCache = false,
+  }) => getFileFromCache(key, ignoreMemCache: ignoreMemCache);
 }
 
 /// Concrete base implementation of [BaseCacheManager].
@@ -93,10 +88,11 @@ abstract class CacheManager implements BaseCacheManager {
   /// The global log level for all cache manager instances.
   static CacheManagerLogLevel logLevel = CacheManagerLogLevel.none;
 
-  @Deprecated('use [getFileFromMemory]')
-  Future<FileInfo?> getFileFromMemory(String key,
-          {bool ignoreMemCache = false}) =>
-      getFileFromCache(key, ignoreMemCache: ignoreMemCache);
+  @Deprecated('use [getFileFromCache]')
+  Future<FileInfo?> getFileFromMemory(
+    String key, {
+    bool ignoreMemCache = false,
+  }) => getFileFromCache(key, ignoreMemCache: ignoreMemCache);
 }
 
 /// Extended cache manager with image-specific methods.
