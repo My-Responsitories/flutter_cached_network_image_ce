@@ -1567,11 +1567,6 @@ void main() {
       } on Object catch (_) {}
     });
 
-    test('connectionParameters defaults to null', () async {
-      manager = await DefaultCacheManager.init();
-      expect(manager.connectionParameters, isNull);
-    });
-
     test('accepts connectionParameters', () async {
       manager = await DefaultCacheManager.init(
         connectionParameters: ConnectionParameters(
@@ -1579,13 +1574,8 @@ void main() {
           requestTimeout: const Duration(seconds: 30),
         ),
       );
-      expect(manager.connectionParameters, isNotNull);
       expect(
-        manager.connectionParameters!.connectionTimeout,
-        const Duration(seconds: 10),
-      );
-      expect(
-        manager.connectionParameters!.requestTimeout,
+        manager.requestTimeout,
         const Duration(seconds: 30),
       );
     });

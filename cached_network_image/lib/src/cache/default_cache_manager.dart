@@ -15,6 +15,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'cache_entry_metadata.dart';
+import 'shared_http_client.dart';
 
 export 'cache_entry_metadata.dart';
 
@@ -45,10 +46,14 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   DefaultCacheManager._(
     this.stalePeriod,
     this.maxNrOfCacheLength,
-    this.connectionParameters,
-    this._httpClientFactory,
+    ConnectionParameters? connectionParameters,
+    http.Client Function() httpClientFactory,
     this._cacheDirectoryProvider,
-  );
+  )   : requestTimeout = connectionParameters?.requestTimeout,
+        _httpClient = SharedHttpClient(
+          httpClientFactory,
+          connectionParameters?.connectionTimeout,
+        );
 
   static DefaultCacheManager? instance;
 
@@ -83,10 +88,9 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
   ///
   /// When `null` (the default), no timeouts are applied and downloads may
   /// wait indefinitely — preserving the existing behaviour.
-  final ConnectionParameters? connectionParameters;
+  final Duration? requestTimeout;
 
-  /// Factory for creating HTTP clients (injectable for testing).
-  final http.Client Function() _httpClientFactory;
+  final SharedHttpClient _httpClient;
 
   /// Provider for the base cache directory.
   final CacheDirectoryProvider _cacheDirectoryProvider;
@@ -280,25 +284,26 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
       CacheManagerLogLevel.verbose,
     );
 
-    final request = http.Request('GET', Uri.parse(url));
-    if (headers != null) {
-      request.headers.addAll(headers);
-    }
-
-    final client = _httpClientFactory();
+    SharedHttpClientResponse? clientResponse;
+    http.StreamedResponse? rawResponse;
     try {
-      final connectionTimeout = connectionParameters?.connectionTimeout;
-      final response = connectionTimeout != null
-          ? await client.send(request).timeout(connectionTimeout)
-          : await client.send(request);
+      clientResponse =
+          await _httpClient.send(uri: Uri.parse(url), headers: headers);
+      final response = clientResponse.response;
+      rawResponse = response;
 
       if (response.statusCode != 200 && response.statusCode != 202) {
+        // Cancel the body stream before throwing, as we won't consume it.
+        await _cancelResponseStream(response);
         throw HttpExceptionWithStatus(
           response.statusCode,
           'Invalid statusCode: ${response.statusCode}',
           uri: Uri.parse(url),
         );
       }
+      // After this point rawResponse should not be canceled here;
+      // we will read the stream ourselves. Set to null to avoid double-cancel.
+      rawResponse = null;
 
       final contentLength = response.contentLength;
       final fileExtension = url.fileExtension;
@@ -311,10 +316,9 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
           io.File('$filePath.${DateTime.now().microsecondsSinceEpoch}.tmp');
       final sink = tempFile.openWrite();
 
-      final requestTimeout = connectionParameters?.requestTimeout;
-      final stream = requestTimeout != null
-          ? response.stream.timeout(requestTimeout)
-          : response.stream;
+      final requestTimeout = this.requestTimeout;
+      Stream<List<int>> stream = response.stream;
+      if (requestTimeout != null) stream = stream.timeout(requestTimeout);
 
       var receivedBytes = 0;
       var movedToFinalPath = false;
@@ -379,18 +383,37 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
       final eTag = cacheHeaders['etag'];
 
       await _cacheBox!.put(
-          key.fnvHashStr,
-          CacheEntryMetadata(
-            url: url,
-            fileExtension: fileExtension,
-            validTill: validTill,
-            eTag: eTag,
-            length: receivedBytes,
-          ));
+        key.fnvHashStr,
+        CacheEntryMetadata(
+          url: url,
+          fileExtension: fileExtension,
+          validTill: validTill,
+          eTag: eTag,
+          length: receivedBytes,
+        ),
+      );
 
       yield FileInfo(finalFile, FileSource.Online, validTill, url);
+    } catch (_) {
+      // Cancel the stream if we still hold a rawResponse that hasn't been consumed.
+      final response = rawResponse;
+      if (response != null) {
+        await _cancelResponseStream(response);
+      }
+      rethrow;
     } finally {
-      client.close();
+      clientResponse?.release();
+    }
+  }
+
+  Future<void> _cancelResponseStream(http.StreamedResponse response) async {
+    try {
+      await response.stream
+          .listen(null, onError: (_, __) {}, cancelOnError: true)
+          .cancel();
+    } on StateError catch (_) {
+      // A downstream owner may already have consumed the single-subscription
+      // stream. Other cleanup failures should remain visible.
     }
   }
 
@@ -469,6 +492,8 @@ class DefaultCacheManager extends CacheManager with ImageCacheManager {
 
   @override
   Future<void> dispose() async {
+    _httpClient.dispose();
+
     if (_cacheBox != null && _cacheBox!.isOpen) {
       try {
         await _cacheBox!.close();
