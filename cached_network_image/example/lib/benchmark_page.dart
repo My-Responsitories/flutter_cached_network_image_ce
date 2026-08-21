@@ -2,7 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cached_network_image_ce/cached_network_image.dart' as ce;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart' as original;
 
 class BenchmarkContent extends StatefulWidget {
